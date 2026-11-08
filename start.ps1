@@ -1,6 +1,7 @@
 # Starts Habblaud (http://localhost:4747) in its own window, then the deck daemon here (simulator on :4748).
 # Close the Rise Mode / Mirabox app first (also from the tray): it holds the USB device.
 #   -Sim    simulator only, no hardware
+# For everyday use without terminals, see tray.ps1.
 param([switch]$Sim)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hab = Join-Path (Split-Path -Parent $here) 'habblaud'

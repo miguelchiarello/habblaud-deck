@@ -7,11 +7,17 @@ import { dirname, join } from 'node:path';
 import { encodePng } from '../png';
 import type { DeckApp, Frame } from '../app';
 
+/** Daemon controls the tray app uses (POST /device {"on": false|true}). */
+export interface Controls {
+  pause(): void;
+  resume(): void;
+}
+
 export class Simulator {
   private clients = new Set<ServerResponse>();
   private html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'index.html'), 'utf8');
 
-  constructor(private readonly app: DeckApp, readonly port = Number(process.env.DECK_SIM_PORT ?? 4748), private readonly status: () => Record<string, unknown> = () => ({})) {}
+  constructor(private readonly app: DeckApp, readonly port = Number(process.env.DECK_SIM_PORT ?? 4748), private readonly status: () => Record<string, unknown> = () => ({}), private readonly controls?: Controls) {}
 
   start(): Promise<void> {
     const srv = createServer((req, res) => {
@@ -27,7 +33,15 @@ export class Simulator {
         req.on('close', () => this.clients.delete(res));
         return;
       }
-      if (req.method === 'POST' && (url.pathname === '/press' || url.pathname === '/gaps')) {
+      if (req.method === 'POST' && url.pathname === '/celebrate') {
+        this.app.celebrate();
+        return res.writeHead(204).end();
+      }
+      if (req.method === 'GET' && url.pathname === '/status') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        return res.end(JSON.stringify(this.status()));
+      }
+      if (req.method === 'POST' && (url.pathname === '/press' || url.pathname === '/gaps' || url.pathname === '/device')) {
         let body = '';
         req.on('data', (c) => (body += c));
         req.on('end', () => {
@@ -35,6 +49,7 @@ export class Simulator {
             const j = JSON.parse(body || '{}');
             if (url.pathname === '/press' && Number.isInteger(j.key) && j.key >= 0 && j.key < 15) this.app.press(j.key, !!j.down);
             if (url.pathname === '/gaps') this.app.setGaps(clamp(j.gap, 0, 30), clamp(j.stripGap ?? j.gap, 0, 30));
+            if (url.pathname === '/device' && typeof j.on === 'boolean') (j.on ? this.controls?.resume() : this.controls?.pause());
             res.writeHead(204).end();
           } catch {
             res.writeHead(400).end();
@@ -44,7 +59,10 @@ export class Simulator {
       }
       res.writeHead(404).end();
     });
-    return new Promise((resolve) => srv.listen(this.port, '127.0.0.1', () => resolve()));
+    return new Promise((resolve, reject) => {
+      srv.once('error', reject);
+      srv.listen(this.port, '127.0.0.1', () => resolve());
+    });
   }
 
   get watching(): boolean {

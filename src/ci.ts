@@ -17,6 +17,9 @@ export interface CiStatus {
   at?: number;
   url?: string;
   branch?: string;
+  /** When this branch last went green after a running or red build (epoch ms, local clock): the deck celebrates. */
+  passedAt?: number;
+  runId?: number;
 }
 
 const NONE: CiStatus = { state: 'none' };
@@ -111,7 +114,12 @@ export class CiWatcher {
       const list = j.workflow_runs ?? [];
       // Prefer runs from pushes / PRs over bots (dependency updates, schedules).
       const run = list.find((r) => r.event === 'push' || r.event === 'pull_request') ?? list[0];
-      e.status = run ? toStatus(run) : NONE;
+      const prev = e.status;
+      const next = run ? toStatus(run) : NONE;
+      // Celebrate a run we saw going (running/red → green), or a new green run that finished between two polls.
+      const fresh = prev !== NONE && (prev.state === 'running' || prev.state === 'fail' || (!!prev.runId && prev.runId !== next.runId));
+      if (next.state === 'pass') next.passedAt = fresh ? Date.now() : prev.passedAt;
+      e.status = next;
     } catch {
       /* offline: keep the last status */
     } finally {
@@ -122,11 +130,11 @@ export class CiWatcher {
   }
 }
 
-interface GhRun { name: string; status: string; conclusion: string | null; event: string; html_url: string; run_started_at?: string; created_at: string; head_branch: string }
+interface GhRun { id: number; name: string; status: string; conclusion: string | null; event: string; html_url: string; run_started_at?: string; created_at: string; head_branch: string }
 
 function toStatus(r: GhRun): CiStatus {
   const state: CiState = r.status !== 'completed' ? 'running' : r.conclusion === 'success' || r.conclusion === 'neutral' || r.conclusion === 'skipped' ? 'pass' : r.conclusion === 'cancelled' ? 'none' : 'fail';
-  return { state, name: r.name, at: Date.parse(r.run_started_at ?? r.created_at), url: r.html_url, branch: r.head_branch };
+  return { state, runId: r.id, name: r.name, at: Date.parse(r.run_started_at ?? r.created_at), url: r.html_url, branch: r.head_branch };
 }
 
 /**

@@ -6,7 +6,8 @@ import type { HabblaudClient, Decision } from './habblaud-client';
 import { drawLounge, drawOffline, drawRoom, seatedAgents, type Clock } from './scene/office';
 import { drawAgentCard, drawNav, drawPermission } from './scene/panels';
 import { drawStrip, type Floor } from './scene/strip';
-import { CiWatcher } from './ci';
+import { CiWatcher, type CiStatus } from './ci';
+import { PASS_FX_MS } from './scene/build';
 import { alarm, banner, confetti, doors } from './scene/fx';
 
 type View =
@@ -41,6 +42,9 @@ export class DeckApp {
   /** CI status per project (GitHub Actions), refreshed in the background. */
   readonly ci = new CiWatcher(undefined, (m) => console.log(`[deck] ${m}`));
   private offset = 0; // server clock - local clock
+  /** celebrate() fakes a green build on the current floor (to try the effect without waiting for GitHub). */
+  private testPassAt = 0;
+  private testRoom: string | null = null;
   private seats: AgentInfo[] = [];
   setGaps(gap: number, stripGap = gap): void {
     this.g = geometry(gap, stripGap);
@@ -81,6 +85,25 @@ export class DeckApp {
 
   private floorIndex(): number {
     return Math.max(0, this.rooms().findIndex((r) => r.id === this.floorId));
+  }
+
+  /** Plays the green-build celebration on the floor on screen, as if every build there had just passed. */
+  celebrate(): void {
+    this.testPassAt = Date.now();
+    this.testRoom = this.floorId;
+    this.onDirty();
+  }
+
+  /** CI status for a project folder / branch (plus the celebrate() test). */
+  private ciFor(room: RoomInfo, branch?: string): CiStatus {
+    const s = this.ci.get(room.path, branch);
+    if (room.id === this.testRoom && Date.now() - this.testPassAt < PASS_FX_MS) return { ...s, state: 'pass', passedAt: this.testPassAt };
+    return s;
+  }
+
+  /** Agents waiting for an answer (the bell's number). */
+  waitingCount(): number {
+    return this.waitingAgents().length;
   }
 
   private waitingAgents(): AgentInfo[] {
@@ -241,7 +264,7 @@ export class DeckApp {
 
     if (!snap) drawOffline(keys, g, c);
     else if (this.view.kind === 'lounge' || !room) drawLounge(keys, g, snap.agents, c);
-    else if (this.view.kind === 'room') this.seats = drawRoom(keys, g, room, snap.agents, c, this.pressed);
+    else if (this.view.kind === 'room') this.seats = drawRoom(keys, g, room, snap.agents, c, this.pressed, (a) => this.ciFor(room, a.gitBranch));
     else {
       const a = this.agent(this.view.agentId);
       const th = roomTheme(rooms.find((r) => r.id === a?.roomId)?.seed ?? 0);
@@ -276,7 +299,12 @@ export class DeckApp {
     if (this.view.kind === 'lounge' && local - this.arrivedAt < 1800 && !tr) banner(keys, g, 'lounge', 'terreo', local - this.arrivedAt);
 
     // Strip
-    const floors: Floor[] = rooms.map((r, i) => ({ id: r.id, label: String(i + 1), room: r, agents: seatedAgents(r, snap?.agents ?? []), ci: this.ci.get(r.path).state }));
+    const floors: Floor[] = rooms.map((r, i) => {
+      const agents = seatedAgents(r, snap?.agents ?? []);
+      const passed = [this.ciFor(r), ...agents.map((a) => this.ciFor(r, a.gitBranch))].map((s) => s.passedAt ?? 0);
+      const last = Math.max(...passed);
+      return { id: r.id, label: String(i + 1), room: r, agents, ci: this.ci.get(r.path).state, passedAt: last || undefined };
+    });
     const account = snap?.accounts.find((a) => a.usage?.fiveHour || a.usage?.sevenDay) ?? snap?.accounts[0];
     drawStrip(strip, g, floors, fi, this.carPos, account, c);
 

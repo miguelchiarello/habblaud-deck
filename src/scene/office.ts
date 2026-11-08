@@ -4,6 +4,8 @@ import { PixelBuf, renderFurniture, floorChunk, wallFaceTile, roomTheme, renderI
 import { KEY, TOP_KEYS, type Geometry } from '../layout';
 import { appearanceOf, badge, border, character, clipped, icon } from '../art/kit';
 import { text, textCentered, textWidth, normalizeText } from '../art/font';
+import type { CiStatus } from '../ci';
+import { buildLight, passBurst, PASS_FX_MS } from './build';
 
 export interface Clock { t: number; now: number }
 
@@ -44,7 +46,10 @@ export function agentLook(a: AgentInfo, now: number) {
 }
 
 /** One workstation (chair, agent, desk) clipped to a key. `agent` undefined = empty desk. */
-export function workstation(b: PixelBuf, kx: number, ky: number, th: RoomTheme, agent: AgentInfo | undefined, c: Clock, opts: { name?: boolean; lightsOff?: boolean } = {}): void {
+export function workstation(b: PixelBuf, kx: number, ky: number, th: RoomTheme, agent: AgentInfo | undefined, c: Clock, opts: { name?: boolean; lightsOff?: boolean; ci?: CiStatus } = {}): void {
+  const ci = agent ? opts.ci : undefined;
+  const sinceGreen = ci?.passedAt !== undefined ? c.t - ci.passedAt : Infinity;
+  const party = sinceGreen >= 0 && sinceGreen < PASS_FX_MS;
   clipped(b, kx, ky, KEY, KEY, (k) => {
     const cx = kx + KEY / 2;
     const chair = renderFurniture('office_chair_front', th.chairVariant);
@@ -52,13 +57,14 @@ export function workstation(b: PixelBuf, kx: number, ky: number, th: RoomTheme, 
     let look: ReturnType<typeof agentLook> | undefined;
     if (agent) {
       look = agentLook(agent, c.now);
+      if (party) look = { pose: 'cheer' as const, held: undefined }; // their build just went green
       const s = character(appearanceOf(agent), look.pose, 'down', c.t, look.held, true, agent.seed % 997);
       k.draw(s.buf, cx - s.ax, ky + 28 - s.ay);
     }
     const desk = renderFurniture('desk_back', th.deskVariant, 0, agent?.seed ?? 0);
     k.draw(desk.base.buf, cx - desk.base.ax, ky + 45 - desk.base.ay);
     if (agent && look) {
-      if ('kind' in look && look.kind) badge(k, look.kind, kx + KEY - 9, ky + 2);
+      if (!party && 'kind' in look && look.kind) badge(k, look.kind, kx + KEY - 9, ky + 2);
       if ('hourglass' in look && look.hourglass) k.draw(renderIcon(Math.floor(c.t / 900) % 2 ? 'hourglass_flip' : 'hourglass').buf, kx + KEY - 12, ky + 1);
       if ('zzz' in look && look.zzz) k.draw(renderIcon('zzz').buf, kx + KEY - 12, ky + 2 - (Math.floor(c.t / 500) % 2));
       if ('cobweb' in look && look.cobweb) k.draw(renderIcon('cobweb').buf, kx, ky);
@@ -69,6 +75,8 @@ export function workstation(b: PixelBuf, kx: number, ky: number, th: RoomTheme, 
       if (agent.kind === 'sub') k.rect(kx + 1, ky + KEY - 3, 3, 2, '#8d66cf');
       if (opts.name) nameTag(k, agent.name, kx + KEY / 2, ky + KEY - 6);
     }
+    if (ci) buildLight(k, kx + 2, ky + 2, ci.state, c.t, sinceGreen);
+    if (party && agent) passBurst(k, kx, ky, sinceGreen, agent.seed % 101);
     if (opts.lightsOff) k.rect(kx, ky, KEY, KEY, 'rgba(16,20,36,0.55)');
   });
 }
@@ -91,7 +99,7 @@ export function seatedAgents(room: RoomInfo, agents: AgentInfo[]): AgentInfo[] {
     .sort((x, y) => (x.kind === y.kind ? x.startedAt - y.startedAt : x.kind === 'main' ? -1 : 1));
 }
 
-export function drawRoom(b: PixelBuf, g: Geometry, room: RoomInfo, agents: AgentInfo[], c: Clock, pressed: Set<number>): AgentInfo[] {
+export function drawRoom(b: PixelBuf, g: Geometry, room: RoomInfo, agents: AgentInfo[], c: Clock, pressed: Set<number>, ciOf?: (a: AgentInfo) => CiStatus): AgentInfo[] {
   const th = roomTheme(room.seed);
   paintFloor(b, g, 'carpet', th, room.seed);
   paintWall(b, g, th, room.seed);
@@ -101,7 +109,7 @@ export function drawRoom(b: PixelBuf, g: Geometry, room: RoomInfo, agents: Agent
     const r = g.key(k);
     let a: AgentInfo | undefined = seated[i];
     if (i === 9 && seated.length > 10) a = undefined;
-    workstation(b, r.x, r.y, th, a, c, { name: true, lightsOff });
+    workstation(b, r.x, r.y, th, a, c, { name: true, lightsOff, ci: a && ciOf ? ciOf(a) : undefined });
     if (i === 9 && seated.length > 10) {
       b.rect(r.x + 6, r.y + 8, 20, 11, 'rgba(29,36,51,0.85)');
       textCentered(b, `+${seated.length - 9}`, r.x + KEY / 2, r.y + 11, '#ffffff');

@@ -7,8 +7,9 @@ import { KEY, type Geometry } from '../layout';
 import { text, textCentered } from '../art/font';
 import type { Clock } from './office';
 import type { CiState } from '../ci';
+import { fireworks, PASS_FX_MS } from './build';
 
-export interface Floor { id: string; label: string; room?: RoomInfo; agents: AgentInfo[]; ci?: CiState }
+export interface Floor { id: string; label: string; room?: RoomInfo; agents: AgentInfo[]; ci?: CiState; /** a build on this floor just went green (local ms) */ passedAt?: number }
 
 const CI_COL: Record<CiState, string | undefined> = { pass: '#4cae6a', fail: '#ff5a5a', running: '#f2c14e', none: undefined };
 
@@ -94,7 +95,9 @@ function building(b: PixelBuf, y0: number, y1: number, floors: Floor[], current:
     const idx = start + i;
     const fy = floorTop(i);
     const isCur = idx === current;
+    const green = f.passedAt !== undefined && t - f.passedAt >= 0 && t - f.passedAt < PASS_FX_MS;
     b.rect(BX, fy, BW, FH, isCur ? '#33416a' : '#262f4a'); // facade
+    if (green && Math.floor((t - f.passedAt!) / 250) % 2 === 0) b.rect(BX, fy, BW, FH - 1, 'rgba(62,196,109,0.35)');
     b.rect(BX, fy + FH - 1, BW, 1, '#1b2133'); // slab
     if (isCur) b.rect(BX, fy, 1, FH - 1, '#ffd23f');
     // 10 windows = 10 seats (row-major like the keys: seats 0..4 on top, 5..9 below).
@@ -116,6 +119,9 @@ function building(b: PixelBuf, y0: number, y1: number, floors: Floor[], current:
     const on = f.ci === 'fail' ? Math.floor(t / 700) % 2 === 0 : f.ci === 'running' ? Math.floor(t / 350) % 2 === 0 : true;
     if (ci) b.rect(BX + BW - 3, fy + FH - 1, 3, 1, on ? ci : '#2b3148');
   }
+
+  // Fireworks over the roof for every floor whose build just went green.
+  for (const f of shown) if (f.passedAt !== undefined) fireworks(b, BX, BX + BW, y0, roofY - 6, t - f.passedAt, hash(f.id.length * 7 + Math.floor(f.passedAt / 1000)) * 100);
 
   // Lobby: glass door, lit from inside after dark.
   b.rect(BX, ground, BW, GH, '#2b3148');

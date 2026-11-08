@@ -10,7 +10,9 @@
     "calibrate": "tsx src/calibrate.ts",
     "probe": "tsx src/probe.ts",
     "typecheck": "tsc --noEmit",
-    "readme-images": "tsx scripts/readme-images.ts"
+    "readme-images": "tsx scripts/readme-images.ts",
+    "tray": "powershell -NoProfile -ExecutionPolicy Bypass -File tray.ps1",
+    "tray-icons": "tsx scripts/tray-icons.ts"
   },
   "dependencies": {
     "jpeg-js": "^0.4.4",

@@ -43,11 +43,15 @@ function agent(name: string, roomId: string, status: AgentInfo['status'], ageMin
 }
 const act = (kind: string, text: string, detail?: string) => ({ id: kind, kind, icon: '', text, detail, at: NOW } as AgentInfo['activity']);
 
-function office(opts: { rafaelAsks?: boolean } = {}): AgentInfo[] {
+function office(opts: { rafaelAsks?: boolean; breakTime?: boolean } = {}): AgentInfo[] {
   seq = 0;
+  // breakTime: most of the team is idle, so the lounge is full (ping-pong, sofa, beanbags, coffee).
+  const idleIf = (name: string, a: AgentInfo): AgentInfo =>
+    opts.breakTime && ['Caio', 'Nina', 'Teo', 'Iara', 'Gabi', 'Leo'].includes(name) ? { ...a, status: 'idle', activity: undefined } : a;
   const perm = { id: 'p1', tool: 'Bash', title: 'Rodar comando', text: 'npm test -- --coverage', icon: '', input: 'npm test -- --coverage', inputKind: 'command', createdAt: NOW, expiresAt: NOW + 10 * MIN } as PermissionRequestInfo;
   return [
     agent('Marina', 'webshop', 'working', 180, {
+      gitBranch: 'feat/saved-cards',
       activity: act('edit', 'Editando Checkout.tsx', 'src/pages/Checkout.tsx'),
       tasks: [
         { id: '1', title: 'Saved cards API', status: 'completed' }, { id: '2', title: 'Card picker', status: 'completed' },
@@ -59,17 +63,17 @@ function office(opts: { rafaelAsks?: boolean } = {}): AgentInfo[] {
       ? agent('Rafael', 'webshop', 'waiting', 170, { waitingFor: 'aprovar uma permissão', permission: perm, activity: act('run', 'Rodando npm test') })
       : agent('Rafael', 'webshop', 'working', 170, { activity: act('test', 'Rodando os testes') }),
     agent('Bia', 'webshop', 'shell', 160, { shells: [{ id: 'sh', command: 'npm run build', startedAt: NOW - 4 * MIN } as never], activity: act('run', 'Rodando npm run build') }),
-    agent('Caio', 'webshop', 'working', 150, { activity: act('test', 'Rodando os testes') }),
+    idleIf('Caio', agent('Caio', 'webshop', 'working', 150, { activity: act('test', 'Rodando os testes') })),
     agent('Lu', 'webshop', 'idle', 140),
-    agent('Nina', 'webshop', 'done', 130),
-    agent('Teo', 'webshop', 'working', 120, { kind: 'sub', role: 'Explore', activity: act('search', 'Procurando "cart"') }),
-    agent('Iara', 'api', 'working', 110, { activity: act('git', 'git rebase main') }),
+    idleIf('Nina', agent('Nina', 'webshop', 'done', 130)),
+    idleIf('Teo', agent('Teo', 'webshop', 'working', 120, { kind: 'sub', role: 'Explore', activity: act('search', 'Procurando "cart"') })),
+    idleIf('Iara', agent('Iara', 'api', 'working', 110, { activity: act('git', 'git rebase main') })),
     opts.rafaelAsks // in the permission scene the bell must lead to Rafael's request
       ? agent('Davi', 'api', 'working', 100, { activity: act('edit', 'Editando auth.ts') })
       : agent('Davi', 'api', 'waiting', 100, { waitingFor: 'responder uma pergunta' }),
     agent('Rui', 'api', 'idle', 90),
-    agent('Gabi', 'api', 'working', 80, { activity: act('read', 'Lendo routes.ts') }),
-    agent('Leo', 'docs', 'working', 70, { activity: act('write', 'Escrevendo guia.md') }),
+    idleIf('Gabi', agent('Gabi', 'api', 'working', 80, { activity: act('read', 'Lendo routes.ts') })),
+    idleIf('Leo', agent('Leo', 'docs', 'working', 70, { activity: act('write', 'Escrevendo guia.md') })),
   ];
 }
 
@@ -93,11 +97,19 @@ function newApp(start: number, agents: (c: FakeClient) => void): { app: DeckApp;
   NOW = start;
   const client = new FakeClient();
   const app = new DeckApp(client as unknown as HabblaudClient, { gap: cfg.gap, stripGap: cfg.stripGap });
-  (app as unknown as { ci: { get: (p: string) => CiStatus } }).ci = { get: (p) => ({ ...(CI[p] ?? { state: 'none' }), at: NOW - 6 * MIN }) };
+  (app as unknown as { ci: { get: (p: string, b?: string) => CiStatus } }).ci = {
+    get: (p, b) => {
+      // Marina's branch: running until GREEN_AT, then green (and celebrated).
+      if (b === 'feat/saved-cards') return GREEN_AT && NOW >= GREEN_AT ? { state: 'pass', passedAt: GREEN_AT, at: NOW - MIN } : { state: 'running', at: NOW - 3 * MIN };
+      return { ...(CI[p] ?? { state: 'none' }), at: NOW - 6 * MIN };
+    },
+  };
   agents(client);
   return { app, client };
 }
 const tap = (app: DeckApp, k: number) => { app.press(k, true); app.press(k, false); };
+/** When Marina's build turns green (0 = never in this scene). */
+let GREEN_AT = 0;
 
 // ---------------------------------------------------------------- composing a device frame
 const PAD = 8, SEP = 10, VIS = 2; // the deck hides strip x < 2
@@ -203,7 +215,22 @@ function record(app: DeckApp, seconds: number, events: [number, () => void][] = 
   writeGif('permission.gif', shots, 3);
 }
 
-// 4. The building through a day (time-lapse), with the time underneath.
+// 4. Break time: down to the lounge (ping-pong over the gaps between keys, sofa, games, coffee) and back.
+{
+  const { app } = newApp(at(16, 30), (c) => c.push(office({ breakTime: true })));
+  writeGif('lounge.gif', record(app, 10, [[1200, () => tap(app, 13)], [7800, () => tap(app, 13)]]), 3);
+}
+
+// 5. A build goes green: the light over Marina's desk stops spinning, she cheers, sparkles fly, and fireworks go off
+//    over the building on the strip.
+{
+  const { app } = newApp(at(20, 40), (c) => c.push(office()));
+  const shots = record(app, 6, [[1800, () => { GREEN_AT = NOW; }]]);
+  GREEN_AT = 0;
+  writeGif('ci-pass.gif', shots, 3);
+}
+
+// 6. The building through a day (time-lapse), with the time underneath.
 {
   NOW = at(0, 0);
   const agents = office();

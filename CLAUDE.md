@@ -15,6 +15,11 @@ Read README.md first. Windows 11, PowerShell, Node 24. Run things with `npm run 
 
 ## Status
 Tasks 1–4 done (ids, geometry, calibration, render path = tiles: ~118 ms per full frame). `npm start` drives the deck.
+Since then: write-stall recovery (`src/device/link.ts`: reopen with back-off, "replug" after 4 failures, pause/resume),
+tray app (`tray.ps1`, icons from `scripts/tray-icons.ts`), CI build lights on desks + green-build celebration
+(`src/scene/build.ts`, `POST :4748/celebrate` to try it). Daemon control API on the simulator port: `GET /status`,
+`POST /device {"on":bool}`. Run the daemon as `node --import tsx src/main.ts` when you need to stop it from a tool:
+stopping `npm` leaves the node child running (and two daemons on one deck stall it).
 Open: a live full-panel command (needs a USB capture of the vendor app setting a background).
 
 ## Rules
