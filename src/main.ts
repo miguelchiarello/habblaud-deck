@@ -52,10 +52,16 @@ let busy = false;
 const tick = async () => {
   const f = app.render();
   sim.push(f);
-  if (!deck?.connected || busy) return;
+  const d = deck; // a failed write clears `deck` mid-frame: keep our own handle and stop when it drops
+  if (!d?.connected || busy) return;
   busy = true;
   try {
-    for (const t of frameTiles(f, app.g, cfg)) await deck.tile(t.index, t.rgba, t.w, t.h);
+    for (const t of frameTiles(f, app.g, cfg)) {
+      if (!d.connected) break;
+      await d.tile(t.index, t.rgba, t.w, t.h);
+    }
+  } catch (e) {
+    log(`frame not sent: ${(e as Error).message}`);
   } finally {
     busy = false;
   }
