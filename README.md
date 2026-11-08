@@ -7,7 +7,7 @@ Mirabox 293S V3): 15 LCD keys and a side strip, driven directly over USB HID by 
 a desk on its own key, the strip shows your usage limits and a building with one floor per project, and you can answer
 permission requests without leaving what you're doing.
 
-![The office on the deck at sunset: seven agents at their desks, the navigation row, and the strip with the 5-hour and weekly batteries around the project building](docs/office.png)
+![The office on the deck at sunset: agents working at their desks, then a ride up to the next project floor and back, with the elevator doors closing across the keys and the car moving along the strip](docs/office.gif)
 
 The characters and furniture are drawn by **Habblaud's own art code** (pure TypeScript), so every agent looks exactly
 like it does in the browser.
@@ -21,7 +21,7 @@ you. Names sit on little desk plates.
 
 **Press an agent** to open its card: one fact per key, each in its own colour, and text never runs across keys.
 
-![Agent card: name, session title, project and branch, model and uptime, status, current activity, task progress, lines and cost, and a CI key](docs/agent-card.png)
+![Opening an agent's card at night: name, session title, project and branch, model and uptime, status, current activity, task progress, lines and cost, and a CI key, with long text scrolling inside its key](docs/agent-card.gif)
 
 | key | shows |
 |---|---|
@@ -38,7 +38,7 @@ you. Names sit on little desk plates.
 **Permission requests** come to the deck: the request on the top rows and **Yes / Always / Terminal / No / Back** on the
 bottom row. AskUserQuestion options become keys you can press.
 
-![A permission request: the command on the top rows, Yes, Always, Terminal, No and Back on the bottom row](docs/permission.png)
+![A permission request: the bell jumps to the agent asking, the command fills the top rows, and pressing Yes approves it with a green flash](docs/permission.gif)
 
 **The bottom row.** ▲ ▼ ride the elevator between project floors (doors close across the deck and the car slides along
 the strip); 🔔 counts the agents that need you and jumps straight to the oldest; 🌐 opens Habblaud in the browser;
@@ -58,7 +58,7 @@ spinning pulley, a counterweight and a "ding" when it rests.
 
 The sky follows your local time:
 
-![The building through the day: moonlit night, sunrise, morning clouds, midday sun, sunset and dusk](docs/day-night.png)
+![The building through a whole day in a few seconds: moonlit night, sunrise, morning clouds, the midday sun, sunset and dusk](docs/day-night.gif)
 
 ## Setup (Windows)
 
@@ -98,7 +98,7 @@ GitHub's rate limit.
 | `npm run calibrate` | check orientation and key order (press the keys from the top-left, row by row) |
 | `npm run probe -- list [all]` | HID devices that look like the deck (`all`: every HID device) |
 | `npm run probe -- panel \| inputs \| strip-tiles \| raw \| no-keepalive` | protocol experiments |
-| `npm run readme-images` | re-render the pictures in `docs/` |
+| `npm run readme-images` | re-render the README animations in `docs/` |
 | `npm run typecheck` | `tsc --noEmit` |
 
 Environment: `HABBLAUD_URL` (default `http://localhost:4747`), `DECK_SIM_PORT` (default `4748`), `GITHUB_TOKEN`
