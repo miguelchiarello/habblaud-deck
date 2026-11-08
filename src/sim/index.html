@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Habblaud Deck</title>
+<style>
+  :root { --bg: #e9ecf2; --ink: #1d2433; --mute: #6b7388; --card: #ffffff; --line: #d3d8e2; --accent: #3f7fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #10131c; --ink: #e8ecf4; --mute: #8a93a6; --card: #181d2a; --line: #2a3142; --accent: #6aa2ff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); color: var(--mute); }
+  .pill.on { color: #2f8a4c; border-color: #9fd8b0; }
+  .pill.off { color: #c0392b; border-color: #f0b0a8; }
+  .stage { display: flex; justify-content: center; padding: 28px 0; overflow-x: auto; }
+  canvas#deck { image-rendering: pixelated; touch-action: none; cursor: pointer; max-width: 100%; height: auto; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 8px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; color: var(--mute); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+  label { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--bg); }
+  .keys { font-size: 13px; color: var(--mute); }
+  code { font: 12px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Habblaud Deck</h1>
+    <span id="hab" class="pill">habblaud…</span>
+    <span id="dev" class="pill">deck…</span>
+  </header>
+  <div class="stage"><canvas id="deck"></canvas></div>
+  <div class="controls">
+    <div class="card">
+      <h2>Vão entre teclas</h2>
+      <label>teclas <input id="gap" type="range" min="0" max="24" value="9"> <span id="gapv">9</span></label>
+      <label>faixa <input id="sgap" type="range" min="0" max="24" value="9"> <span id="sgapv">9</span></label>
+      <div class="keys">Em px de arte (×3 no aparelho). Ajuste até o cenário “passar” certinho pelas molduras.</div>
+    </div>
+    <div class="card">
+      <h2>Visualização</h2>
+      <label><input id="xray" type="checkbox"> raio-x (mostra o que cai nos vãos)</label>
+      <label><input id="full" type="checkbox"> faixa contínua (modo “imagem cheia”)</label>
+      <label><input id="bezel" type="checkbox" checked> moldura do aparelho</label>
+    </div>
+    <div class="card">
+      <h2>Atalhos</h2>
+      <div class="keys">Linhas: <kbd>1</kbd>–<kbd>5</kbd>, <kbd>Q</kbd>–<kbd>T</kbd>, <kbd>A</kbd>–<kbd>G</kbd>. Segure a tecla (ou o clique) por 0,6 s para o toque longo — abre o agente no navegador.</div>
+    </div>
+  </div>
+</main>
+<script>
+const S = 3;            // art px → device px
+const KEY = 32;
+const cv = document.getElementById('deck');
+const ctx = cv.getContext('2d');
+const imgKeys = new Image(), imgStrip = new Image();
+let geom = null, pressed = new Set();
+const $ = (id) => document.getElementById(id);
+const opt = { xray: false, full: false, bezel: true };
+for (const k of ['xray', 'full', 'bezel']) $(k).onchange = (e) => { opt[k] = e.target.checked; draw(); };
+function sendGaps() {
+  $('gapv').textContent = $('gap').value; $('sgapv').textContent = $('sgap').value;
+  fetch('/gaps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gap: +$('gap').value, stripGap: +$('sgap').value }) });
+}
+$('gap').oninput = sendGaps; $('sgap').oninput = sendGaps;
+
+function layout() {
+  const g = geom;
+  const pad = opt.bezel ? 46 : 12;
+  const stripGapPx = 34;               // space between the key grid and the strip
+  const W = pad * 2 + g.keysW * S + stripGapPx + g.stripW * S;
+  const H = pad * 2 + Math.max(g.keysH, g.stripH) * S;
+  const keys = [];
+  for (let i = 0; i < 15; i++) {
+    const c = i % 5, r = Math.floor(i / 5);
+    keys.push({ i, sx: c * (KEY + g.gap), sy: r * (KEY + g.gap), x: pad + c * (KEY + g.gap) * S, y: pad + r * (KEY + g.gap) * S });
+  }
+  const strip = { x: pad + g.keysW * S + stripGapPx, y: pad + (Math.max(g.keysH, g.stripH) - g.stripH) / 2 * S };
+  return { W, H, pad, keys, strip };
+}
+
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+function draw() {
+  if (!geom || !imgKeys.complete || !imgStrip.complete) return;
+  const g = geom, L = layout();
+  if (cv.width !== L.W || cv.height !== L.H) { cv.width = L.W; cv.height = L.H; }
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, L.W, L.H);
+  if (opt.bezel) {
+    const grad = ctx.createLinearGradient(0, 0, 0, L.H);
+    grad.addColorStop(0, '#2a2d34'); grad.addColorStop(1, '#16181d');
+    ctx.fillStyle = grad; rr(4, 4, L.W - 8, L.H - 8, 28); ctx.fill();
+    ctx.strokeStyle = '#3a3e48'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // keys
+  if (opt.xray) {
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(imgKeys, L.pad, L.pad, g.keysW * S, g.keysH * S);
+    ctx.globalAlpha = 1;
+  }
+  for (const k of L.keys) {
+    const p = pressed.has(k.i) ? 2 : 0;
+    ctx.save();
+    rr(k.x, k.y + p, KEY * S, KEY * S, 7); ctx.clip();
+    ctx.drawImage(imgKeys, k.sx, k.sy, KEY, KEY, k.x, k.y + p, KEY * S, KEY * S);
+    // glossy keycap
+    const gl = ctx.createLinearGradient(k.x, k.y, k.x, k.y + KEY * S);
+    gl.addColorStop(0, 'rgba(255,255,255,0.10)'); gl.addColorStop(0.45, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gl; ctx.fillRect(k.x, k.y, KEY * S, KEY * S);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 2; rr(k.x, k.y + p, KEY * S, KEY * S, 7); ctx.stroke();
+  }
+  // strip
+  const sx = L.strip.x, sy = L.strip.y;
+  ctx.fillStyle = '#0b0c10'; rr(sx - 6, sy - 6, g.stripW * S + 12, g.stripH * S + 12, 8); ctx.fill();
+  if (opt.full) ctx.drawImage(imgStrip, 0, 0, g.stripW, g.stripH, sx, sy, g.stripW * S, g.stripH * S);
+  else for (let j = 0; j < 3; j++) {
+    const ty = j * (KEY + g.stripGap);
+    ctx.drawImage(imgStrip, 0, ty, KEY, KEY, sx, sy + ty * S, KEY * S, KEY * S);
+  }
+}
+
+const es = new EventSource('/events');
+es.onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  if (!geom) { // start the sliders at the daemon's values (deck.config.json), not the HTML defaults
+    $('gap').value = m.geom.gap; $('sgap').value = m.geom.stripGap;
+    $('gapv').textContent = m.geom.gap; $('sgapv').textContent = m.geom.stripGap;
+  }
+  geom = m.geom;
+  let n = 2;
+  const done = () => { if (--n === 0) draw(); };
+  imgKeys.onload = done; imgStrip.onload = done;
+  imgKeys.src = 'data:image/png;base64,' + m.keys;
+  imgStrip.src = 'data:image/png;base64,' + m.strip;
+  const s = m.status || {};
+  $('hab').textContent = s.habblaud ? 'habblaud conectado' : 'habblaud offline';
+  $('hab').className = 'pill ' + (s.habblaud ? 'on' : 'off');
+  $('dev').textContent = s.device ? 'deck conectado' : (s.deviceMode === 'off' ? 'só simulador' : 'deck não encontrado');
+  $('dev').className = 'pill ' + (s.device ? 'on' : 'off');
+};
+
+function press(i, down) {
+  if (i < 0) return;
+  if (down) pressed.add(i); else pressed.delete(i);
+  fetch('/press', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: i, down }) });
+  draw();
+}
+function hit(ev) {
+  if (!geom) return -1;
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * cv.width / r.width, y = (ev.clientY - r.top) * cv.height / r.height;
+  for (const k of layout().keys) if (x >= k.x && y >= k.y && x < k.x + KEY * S && y < k.y + KEY * S) return k.i;
+  return -1;
+}
+let held = -1;
+cv.addEventListener('pointerdown', (e) => { held = hit(e); press(held, true); cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup', () => { if (held >= 0) press(held, false); held = -1; });
+const MAP = '12345qwertasdfg';
+const down = new Set();
+addEventListener('keydown', (e) => { const i = MAP.indexOf(e.key.toLowerCase()); if (i >= 0 && !down.has(i) && !(e.target instanceof HTMLInputElement)) { down.add(i); press(i, true); } });
+addEventListener('keyup', (e) => { const i = MAP.indexOf(e.key.toLowerCase()); if (i >= 0 && down.has(i)) { down.delete(i); press(i, false); } });
+</script>
+</body>
+</html>

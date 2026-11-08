@@ -1,0 +1,28 @@
+{
+  "name": "habblaud-deck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Habblaud on a Rise Mode Vision 01 (Mirabox 293S V3) deck: pixel-art office on 15 LCD keys + side strip.",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "sim": "tsx src/main.ts --no-device",
+    "calibrate": "tsx src/calibrate.ts",
+    "probe": "tsx src/probe.ts",
+    "typecheck": "tsc --noEmit",
+    "readme-images": "tsx scripts/readme-images.ts"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "node-hid": "^3.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "license": "MIT"
+}
